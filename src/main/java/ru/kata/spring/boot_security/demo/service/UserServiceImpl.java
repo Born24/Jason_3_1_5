@@ -11,6 +11,9 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.kata.spring.boot_security.demo.Exceptions.UserAlreadyExistsException;
+import ru.kata.spring.boot_security.demo.Exceptions.UserNotFoundException;
+import ru.kata.spring.boot_security.demo.Exceptions.ValidationException;
 import ru.kata.spring.boot_security.demo.dao.UserDao;
 import ru.kata.spring.boot_security.demo.model.Role;
 import ru.kata.spring.boot_security.demo.model.User;
@@ -29,7 +32,7 @@ public class UserServiceImpl implements UserService {
 
     @Autowired
     @Lazy
-    private  PasswordEncoder passwordEncoder;
+    private PasswordEncoder passwordEncoder;
 
     @Autowired
     public UserServiceImpl(UserDao userDao) {
@@ -54,6 +57,12 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void add(User user) {
+        validateUser(user);
+
+        if (userDao.findByUsername(user.getUsername()) != null) {
+            throw new UserAlreadyExistsException("Пользователь с email " + user.getUsername() + " уже существует");
+        }
+
         user.setActive(true);
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         userDao.add(user);
@@ -61,23 +70,32 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public void update(User user) {
+        validateUser(user);
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
         userDao.update(user);
     }
 
     @Override
     @Transactional
     public void delete(Long id) {
+
+        if (id == null) {
+            throw new UserNotFoundException("Невозможно удалить: пользователь с ID " + id + " не найден");
+        }
+
         userDao.delete(id);
     }
 
     @Transactional
     @Override
     public User findByUsername(String username) {
-        User user =  userDao.findByUsername(username);
-        if(user != null){
-            Hibernate.initialize(user.getRoles());
+        User user = userDao.findByUsername(username);
+        if (user == null) {
+            throw new UserNotFoundException("Пользователь с именем " + username + " не найден");
         }
+        Hibernate.initialize(user.getRoles());
         return user;
     }
 
@@ -98,9 +116,21 @@ public class UserServiceImpl implements UserService {
 
     }
 
+
+
     private Collection<? extends GrantedAuthority> mapRolesToAuthorities(Collection<Role> roles) {
         return roles.stream()
                 .map(r -> new SimpleGrantedAuthority(r.getRole()))
                 .collect(Collectors.toList());
+    }
+
+    private void validateUser(User user) {
+        if (user.getUsername() == null || user.getUsername().isEmpty()) {
+            throw new ValidationException("Имя пользователя не может быть пустым");
+        }
+        if (user.getUsername() == null || !user.getUsername().contains("@")) {
+            throw new ValidationException("Некорректный email: " + user.getUsername());
+        }
+
     }
 }
